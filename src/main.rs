@@ -7,7 +7,8 @@ use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, Copy
 use vulkano::device::{Device, DeviceCreateInfo, QueueCreateInfo, QueueFlags};
 use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
-use vulkano::VulkanLibrary;
+use vulkano::sync::GpuFuture;
+use vulkano::{sync, VulkanLibrary};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -91,7 +92,7 @@ fn main() {
     )
     .expect("Failed to create device.");
 
-    let _queue = queues.next().unwrap();
+    let queue = queues.next().unwrap();
 
     let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
     let data: i32 = 12;
@@ -155,6 +156,19 @@ fn main() {
         .copy_buffer(CopyBufferInfo::buffers(source.clone(), destination.clone()))
         .unwrap();
     let command_buffer = builder.build().unwrap();
+
+    let future = sync::now(device.clone())
+        .then_execute(queue.clone(), command_buffer)
+        .unwrap()
+        .then_signal_fence_and_flush()
+        .unwrap();
+    future.wait(None).unwrap();
+
+    let src_content = source.read().unwrap();
+    let destination_content = destination.read().unwrap();
+    assert_eq!(&*src_content, &*destination_content);
+
+    println!("Everything succeeded with Vulkan!");
 
     let event_loop = EventLoop::new().unwrap();
 
